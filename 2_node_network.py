@@ -1464,21 +1464,43 @@ def t1t2_plot(num_iters=100):
     import matplotlib
     matplotlib.use('TkAgg')
     from matplotlib import pyplot as plt
-    fig, ax = plt.subplots()
+    fig, axes = plt.subplots(ncols=2)
     # (2.68e6, 3.3e3, 0), (2.68e6, 3.3e3, 1), (2.68e6, 3.3e3, 2), (2.68e6, 3.3e3, 3), (3600*1e9,1.46e9, 0), (3600*1e9,1.46e9, 1), (3600*1e9,1.46e9, 2), (3600*1e9,1.46e9, 3)
     # (2.68e6, 3.3e3, 0), (2.68e6, 3.3e3, 1), (2.68e6, 3.3e3, 2), (2.68e6, 3.3e3, 3)
-    for t1, t2, distruns in (2.68e6, 3.3e3, 1), (2.68e6, 3.3e3, 1), (2.68e6, 3.3e3, 2), (2.68e6, 3.3e3, 3):
+    for t1 in [1e12, 1e11, 1e10, 1e9] :
         data = pandas.DataFrame()
-        for d in [1, 2, 5, 10, 20]:
-            data[d] = simulate_two_nodes(t1 = t1, t2=t2, node_distance=d, num_iters=num_iters, distruns = distruns)['F2']
-        # For errorbars we use the standard error of the mean (sem)
-        data = data.agg(['mean', 'sem']).T.rename(columns={'mean': 'fidelity'})
+        time_data = pandas.DataFrame()
+        for t2 in [1e9, 5e8, 1e8, 5e7, 1e7, 5e6, 1e6]:
+            res = simulate_two_nodes(t1 = t1, t2=t2, node_distance=1, num_iters=num_iters, distruns = 2)
+            time_data[t2] = pow(res['time'], -1)*1e9
+            data[t2] = res['F2']        
 
-        data.plot(y='fidelity', yerr='sem', label=f"T1={t1}, T2={t2}, Distil iters:{distruns}", ax=ax)
-    plt.xlabel("Distance(km)")
-    plt.ylabel("Avg Fidelity On success")
-    plt.title("Avg Fidelity for different T1, T2, distil iterations")
+        data = data.agg(['mean', 'sem']).T.rename(columns={'mean': 'fidelity'})
+        time_data = time_data.agg(['mean', 'sem']).T.rename(columns={'mean': 'time'})
+        data.plot(y='fidelity', yerr='sem', label=f"T1={t1}, T2={t2}", ax=axes[0])
+        time_data.plot(y='time', yerr='sem', label=f"T1={t1}, T2={t2}", ax=axes[1])
+        print(f"done {t1}" )
+  
+    # plt.xlabel("T2 (ns)")
+    # plt.ylabel("Avg Fidelity On success")
+    # plt.title("Avg Fidelity for different T1, T2, 2:1, D=1km")
+    # plt.show()
+    # plt.title("Fidelity for different T1, T2, K-shortest paths")
+
+    fig.suptitle("Fidelity for different T1, T2, K-shortest paths")
+    axes[0].set_xlabel("T2 (ns)")
+    axes[0].set_ylabel("Average fidelity on success")
+
+    axes[0].set_xscale("log")
+    axes[0].set_title("Avg fidelity")
+    axes[1].set_xlabel("T2 (ns)")
+    axes[1].set_ylabel("ebit rate (ebits/s)")
+
+    axes[1].set_xscale("log")
+    axes[1].set_title("Average ebit rate")
     plt.show()
+
+
 
 def physical_plot(num_iters=200):
     import matplotlib
@@ -1566,7 +1588,7 @@ def nodes_plot(num_iters=1):
     plt.show()
 
 
-def simulate_two_nodes(t1= 3600 * 1e9, t2=1.46e9, node_distance=1, num_iters=1, sf=0.994, distruns =1, p_loss_node=2, physical = False):
+def simulate_two_nodes(t1= 3600 * 1e9, t2=1.46e9, node_distance=1, num_iters=1, sf=0.8, distruns =1, p_loss_node=2, physical = False):
     ns.sim_reset()
     if(distruns ==0):
         network = example_network_setup(t1 = t1, t2 =t2,  p_loss_node=p_loss_node, qprocessor_positions=4, node_distance=node_distance, source_fidelity_sq=sf, physical = physical)
@@ -1612,4 +1634,4 @@ if __name__ == "__main__":
     np.random.seed(104058)
     # physical_plot()
     # source_fidelity_plot()
-    nodes_plot(200)
+    t1t2_plot(5000)

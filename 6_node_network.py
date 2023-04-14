@@ -1390,7 +1390,6 @@ def create_random_connections(G, network, channels, total_cons, total_links, dis
         wavelength, path = find_channel(shortest_paths, channels, len(shortest_paths), num_channels)
         if (wavelength!=-1):
             src, dest, num_nodes_traversed = get_name_and_dist(path)
-            d = num_nodes_traversed*node_dist-1
             con_num=total_links[path[0]][path[-1]]
             add_connection(network, network.get_node(f"node_{src}"), network.get_node(f"node_{dest}"), p_loss_node = num_nodes_traversed*2
                         , src_conns=total_cons[path[0]], dest_conns=total_cons[path[-1]], con_num=con_num, node_distance=(num_nodes_traversed-1)*node_dist)
@@ -1412,12 +1411,14 @@ def create_random_connections(G, network, channels, total_cons, total_links, dis
             blocking.append(dc)
             ns.sim_run(duration=31)
 
+    ns.sim_run(duration=10029)
+    
     if (mem_blocked >= len(sources)):   #if for all pairs generated this round, no mems found return 
         return True
     if(wavelength_blocked>=len(sources)): #if no wavelengths available for all pairs generated this round,  return 
         return True
 
-    ns.sim_run(duration=300029)
+    
     
 
 
@@ -1478,7 +1479,7 @@ def t1t2_plot(num_iters=50):
         data = pandas.DataFrame()
         time_data = pandas.DataFrame()
         for d in [0.1, 0.2, 0.4, 0.8, 1.6]:
-            res = six_node_network(t1 = t1, t2=t2, q_mem_size=100, node_distance=d, num_channels = 10, num_runs=num_iters, dist_runs = 1, k =k)
+            res = simulate_six_nodes(t1 = t1, t2=t2, q_mem_size=100, node_distance=d, num_channels = 10, num_runs=num_iters, dist_runs = 1, k =k)
             time_data[d] = pow(res['time'], -1)*1e9
             data[d] = res['F2']        
         # For errorbars we use the standard error of the mean (sem)
@@ -1508,7 +1509,7 @@ def runandsave():
 
     np.random.seed(50)
     for i in range(50):
-        res = six_node_network(3, 3, 200, 10,node_distance=0.5, t1 = 2.68e6, t2= 3.3e3)
+        res = simulate_six_nodes(3, 3, 200, 10,node_distance=0.5, t1 = 2.68e6, t2= 3.3e3)
         df3 = pandas.concat([df3,res], ignore_index=True)
         
     print("done k1")
@@ -1516,20 +1517,87 @@ def runandsave():
 
     np.random.seed(50)
     for i in range(50):
-        res = six_node_network(2, 3, 200, 10, node_distance=0.5, t1 = 2.68e6, t2= 3.3e3)
+        res = simulate_six_nodes(2, 3, 200, 10, node_distance=0.5, t1 = 2.68e6, t2= 3.3e3)
         df2 = pandas.concat([df2,res], ignore_index=True)
     print("done k2")
     df2.to_csv("~/qproject/k2_d=0.5._10chan_tsmall.csv", index=False)
 
     np.random.seed(50)
     for i in range(50):
-        res = six_node_network(1, 3, 200, 10, node_distance=0.5, t1 = 2.68e6, t2= 3.3e3)
+        res = simulate_six_nodes(1, 3, 200, 10, node_distance=0.5, t1 = 2.68e6, t2= 3.3e3)
         df1 = pandas.concat([df1,res], ignore_index=True)
     df1.to_csv("~/qproject/k3_d=0.5._10chan_tsmall.csv", index=False)
 
     grouped1 = df1.groupby('network_load')['F2'].mean()
     grouped2 = df2.groupby('network_load')['F2'].mean()
     grouped3 = df3.groupby('network_load')['F2'].mean()
+
+def blocking_histograms(k=2):
+
+    fig, ax = plt.subplots(ncols=3, nrows=2)
+
+    df = pandas.read_csv("~/qproject/repeatedruns/mem10chan3")
+    df = df[df['blocked'].notna()]
+    df = df[["network_load"]]   
+    counts = df.value_counts()
+    total_counts = sum(counts.values)
+    df.hist(ax=ax[0][0])
+    ax[0][0].set_ylabel("Number of blocks")
+    ax[0][0].set_xlabel("Network load")
+    ax[0][0].set_title(f"M=10 N=3, Blocks={total_counts}")
+
+    # df = pandas.read_csv("~/qproject/repeatedruns/mem10chan5") 
+    # df = df[df['blocked'].notna()]
+    # df = df[["network_load"]]
+    # counts = df.value_counts()
+    # total_counts = sum(counts.values)    
+    # df.hist(ax=ax[1][0])
+    ax[1][0].set_ylabel("Number of blocks")
+    ax[1][0].set_xlabel("Network load")
+    ax[1][0].set_title(f"M=10 N=5, Blocks={total_counts}")
+
+    df = pandas.read_csv("~/qproject/repeatedruns/mem20chan3")
+    df = df[df['blocked'].notna()]
+    df = df[["network_load"]]
+    counts = df.value_counts()
+    total_counts = sum(counts.values)    
+    df.hist(ax=ax[0][1])
+    ax[0][1].set_ylabel("Number of blocks")
+    ax[0][1].set_xlabel("Network load")
+    ax[0][1].set_title(f"M=20 N=3, Blocks={total_counts}")
+
+    df = pandas.read_csv("~/qproject/repeatedruns/mem20chan5")
+    df = df[df['blocked'].notna()]
+    df = df[["network_load"]]
+    counts = df.value_counts()
+    total_counts = sum(counts.values)    
+    df.hist(ax=ax[1][1])
+    ax[1][1].set_ylabel("Number of blocks")
+    ax[1][1].set_xlabel("Network load")
+    ax[1][1].set_title(f"M=20 N=5, Blocks={total_counts}")
+
+    df = pandas.read_csv("~/qproject/repeatedruns/mem80chan15")
+    df = df[df['blocked'].notna()]
+    df = df[["network_load"]]
+    counts = df.value_counts()
+    total_counts = sum(counts.values)    
+    df.hist(ax=ax[0][2])
+    ax[0][2].set_ylabel("Number of blocks")
+    ax[0][2].set_xlabel("Network load")
+    ax[0][2].set_title(f"M=80 N=15, Blocks={total_counts}")
+
+    df = pandas.read_csv("~/qproject/repeatedruns/mem80chan20")
+    df = df[df['blocked'].notna()]
+    df = df[["network_load"]]
+    counts = df.value_counts()
+    total_counts = sum(counts.values)    
+    df.hist(ax=ax[1][2])
+    ax[1][2].set_ylabel("Number of blocks")
+    ax[1][2].set_xlabel("Network load")
+    ax[1][2].set_title(f"M=80 N=20, Blocks={total_counts}")
+
+    plt.suptitle("Wavelength blocking for Dynamical Decoupling, K=3, D=1")
+    plt.show()
 
 def mem_blocking(num_iters=3):
     import matplotlib
@@ -1544,18 +1612,19 @@ def mem_blocking(num_iters=3):
         time_data = pandas.DataFrame()
        
         for channels in [1,3,5,10,15,20]:
-            # np.random.seed(50)
-            # res = pandas.DataFrame()
-            # for i in range(10):
-            #     res = pandas.concat([res,six_node_network(q_mem_size=mems, node_distance=1, 
-            #                         num_channels = channels, num_runs=num_iters, dist_runs = 1, k =3)], ignore_index=True)
-            # time_data[channels] = pow(res['time'], -1)*1e9
-            # data[channels] = res['F2']        
-        
-            # res.to_csv(f"~/qproject/repeatedruns/mem{mems}chan{channels}")
-            res =  pandas.read_csv(f"~/qproject/repeatedruns/mem{mems}chan{channels}")
-            data[channels]=res['F2'] 
+            np.random.seed(100)
+            res = pandas.read_csv(f"~/qproject/repeatedruns/mem{mems}chan{channels}")
+            for i in range(10):
+                res = pandas.concat([res,simulate_six_nodes(q_mem_size=mems, node_distance=1, 
+                                    num_channels = channels, num_runs=num_iters, dist_runs = 1, k =3)], ignore_index=True)
             time_data[channels] = pow(res['time'], -1)*1e9
+            data[channels] = res['F2']        
+        
+            res.to_csv(f"~/qproject/repeatedruns/mem{mems}chan{channels}", index= False)
+
+            # res =  pandas.read_csv(f"~/qproject/repeatedruns/mem{mems}chan{channels}")
+            # data[channels]=res['F2'] 
+            # time_data[channels] = pow(res['time'], -1)*1e9
         # For errorbars we use the standard error of the mean (sem)
         data = data.agg(['mean', 'sem']).T.rename(columns={'mean': 'fidelity'})
         time_data = time_data.agg(['mean', 'sem']).T.rename(columns={'mean': 'time'})
@@ -1577,7 +1646,7 @@ def mem_blocking(num_iters=3):
 
     plt.show()
 
-def six_node_network(k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2=1.46e9, node_distance=1, sf=0.994, dist_runs =1, l=0.5):
+def simulate_six_nodes(k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2=1.46e9, node_distance=1, sf=0.994, dist_runs =1, l=0.5):
     ns.sim_reset()
     network = example_network_setup(qprocessor_positions=q_mem_size, t1 = t1, t2 =t2, source_fidelity_sq=sf)
 
@@ -1605,7 +1674,7 @@ def six_node_network(k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2=1
     dataframes, dist_examples, blocking = [],[],[]
     blocked_count = 0
    
-    while (np.sum(channels)/max_links< 0.7) and (sum(total_cons)<0.7*q_mem_size*6) and (blocked_count<4):
+    while (np.sum(channels)/max_links< 0.7) and (sum(total_cons)/2<0.9*q_mem_size*6) and (blocked_count<4):
         blocked = create_random_connections(G, network, channels, total_cons, total_links, dist_examples, dataframes, max_links, k, num_runs, q_mem_size, num_channels, node_distance, blocking, l)
         if(blocked == True):
             blocked_count +=1  #if no pairs could connect last round, system is getting pretty blocked
@@ -1672,7 +1741,7 @@ if __name__ == "__main__":
     
     # ns.sim_reset()
     # runandsave()
-    # df =  six_node_network(3, 100, 10, 10)
+    # df =  simulate_six_nodes(3, 100, 10, 10)
     # df["time"]=pow(df['time'], -1)*1e9
     # # grouped1 = df.groupby("network_load")["time"].agg(['mean', 'sem'])
     # grouped1 = df.groupby("network_load")["dist"].agg(['mean', 'sem'])
@@ -1681,7 +1750,8 @@ if __name__ == "__main__":
     # plt.xlabel('Network load')
     # plt.ylabel('ebit rate')
     # plt.show()
-    mem_blocking()
+    # mem_blocking()
+    blocking_histograms()
     
 
 

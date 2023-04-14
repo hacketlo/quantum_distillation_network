@@ -1,4 +1,4 @@
-import numpy as np
+`import numpy as np
 import netsquid as ns
 import pydynaa as pd
 import warnings
@@ -1377,48 +1377,54 @@ def rem_connection(network, nodea, nodeb, con_num):
 
 def create_random_connections(G, network, channels, total_cons, total_links, dist_examples, dataframes, max_links, K, num_runs, q_mem_size, num_channels, node_dist, blocking, l=0.5):
     sources, dests = generate_users(G, l)
+    mem_blocked = 0
+    wavelength_blocked = 0
     for i in range(len(sources)):
-        if (sources[i]!=dests[i]):
-            shortest_paths = k_shortest_paths(G, sources[i], dests[i], K)
-            if(total_cons[shortest_paths[0][0]]*2>=q_mem_size-1):
-                print(f"Node_{shortest_paths[0][0]} full")
-                dc = pandas.DataFrame({"Node_src":shortest_paths[0][0], "Mem full":True, "network_load" : round(np.sum(channels)/max_links, 2)}, index =[0])
-                blocking.append(dc)
-                continue
-            if(total_cons[shortest_paths[-1][-1]]*2>=q_mem_size-1):
-                print(f"Node_{shortest_paths[-1][-1]} full")
-                dc = pandas.DataFrame({"Node_src":shortest_paths[-1][-1], "Mem full":True, "network_load" : round(np.sum(channels)/max_links, 2)}, index =[0])
-                blocking.append(dc)
-                continue
-            # shortest_paths = list(map(int, shortest_paths))
-            wavelength, path = find_channel(shortest_paths, channels, len(shortest_paths), num_channels)
-            if (wavelength!=-1):
-                src, dest, num_nodes_traversed = get_name_and_dist(path)
-                d = num_nodes_traversed*node_dist-1
-                con_num=total_links[path[0]][path[-1]]
-                add_connection(network, network.get_node(f"node_{src}"), network.get_node(f"node_{dest}"), p_loss_node = num_nodes_traversed*2
-                             , src_conns=total_cons[path[0]], dest_conns=total_cons[path[-1]], con_num=con_num, node_distance=(num_nodes_traversed-1)*node_dist)
-                #rem_connection(network, network.get_node(f"node_{src}"), network.get_node(f"node_{dest}"), con_num)
-                dist_protocol, dc = sim_setup(network.get_node(f"node_{src}"),network.get_node(f"node_{dest}"), imp_src=total_cons[path[0]]*2,
-                                imp_dest= total_cons[path[-1]]*2, con_name = f"{src}{dest}{con_num}",num_runs=num_runs,qs_no = f"{total_cons[path[0]]*2}"
-                                ,network_load = round(np.sum(channels)/max_links, 2), dist=num_nodes_traversed-1, K=K)
-                
-                # dist_example = DistilExample(network.get_node(f"node_{src}"),network.get_node(f"node_{dest}"), inputmempos_a=total_cons[path[0]]*2, 
-                #             inputmempos_b= total_cons[path[-1]]*2, num_runs=num_runs, con_name = f"{src}{dest}{con_num}", qs_no=f"{src}{total_cons[path[0]]}")
-                # dc = setup_data_collector(dist_example, network.get_node("node_A"), network.get_node("node_B"), network_load = round(np.sum(channels)/max_links, 2,),  dist=d)
-                
-                dist_protocol.start()
-                total_links[path[0]][path[-1]]+=1
-                total_cons[path[0]]+=1
-                total_cons[path[-1]]+=1
-                dist_examples.append(dist_protocol)
-                dataframes.append(dc)
-                # dataframes[i] = dc
-                ns.sim_run(duration=300037)
-            else:
-                dc = pandas.DataFrame({"Node_src":shortest_paths[0][0], "Node_dest": shortest_paths[-1][-1], "blocked":True, "network_load" : round(np.sum(channels)/max_links, 2)}, index =[0])
-                blocking.append(dc)
-                ns.sim_run(duration=30022)
+        if(total_cons[sources[i]]*2>=q_mem_size-2):
+            dc = pandas.DataFrame({"Node_src":sources[i], "Mem full":True, "network_load" : round(np.sum(channels)/max_links, 2)}, index =[0])
+            blocking.append(dc)
+            print(f"Node_{sources[i]} full")
+            mem_blocked+=1
+            continue
+        
+        elif(total_cons[dests[i]]*2>=q_mem_size):
+            dc = pandas.DataFrame({"Node_src":dests[i], "Mem full":True, "network_load" : round(np.sum(channels)/max_links, 2)}, index =[0])
+            blocking.append(dc)
+            print(f"Node_{dests[i]} full")
+            mem_blocked+=1
+            continue
+
+        shortest_paths = k_shortest_paths(G, str(sources[i]), str(dests[i]), K)
+        wavelength, path = find_channel(shortest_paths, channels, len(shortest_paths), num_channels)
+        if (wavelength!=-1):
+            src, dest, num_nodes_traversed = get_name_and_dist(path)
+            con_num=total_links[path[0]][path[-1]]
+            add_connection(network, network.get_node(f"node_{src}"), network.get_node(f"node_{dest}"), p_loss_node = num_nodes_traversed*2
+                         , src_conns=total_cons[path[0]], dest_conns=total_cons[path[-1]], con_num=con_num, node_distance=(num_nodes_traversed-1)*node_dist)
+            #rem_connection(network, network.get_node(f"node_{src}"), network.get_node(f"node_{dest}"), con_num)
+            dist_protocol, dc = sim_setup(network.get_node(f"node_{src}"),network.get_node(f"node_{dest}"), imp_src=total_cons[path[0]]*2,
+                            imp_dest= total_cons[path[-1]]*2, con_name = f"{src}{dest}{con_num}",num_runs=num_runs,qs_no = f"{total_cons[path[0]]*2}"
+                            ,network_load = round(np.sum(channels)/max_links, 2), dist=num_nodes_traversed-1, K=K)
+            
+            dist_protocol.start()
+            total_links[path[0]][path[-1]]+=1
+            total_cons[path[0]]+=1
+            total_cons[path[-1]]+=1
+            dist_examples.append(dist_protocol)
+            dataframes.append(dc)
+            ns.sim_run(duration=31)
+        else:
+            wavelength_blocked+=1
+            dc = pandas.DataFrame({"Node_src":sources[i], "Node_dest": dests[i], "blocked":True, "network_load" : round(np.sum(channels)/max_links, 2)}, index =[0])
+            blocking.append(dc)
+            ns.sim_run(duration=31)
+
+    if (mem_blocked >= len(sources)):   #if for all pairs generated this round, no mems found return 
+        return True
+    if(wavelength_blocked>=len(sources)): #if no wavelengths available for all pairs generated this round,  return 
+        return True
+
+    ns.sim_run(duration=10029)
 
 
 def dijkstra_shortest_paths(graph, source):
@@ -1747,7 +1753,7 @@ def create_WS_graph(num_nodes = 20, k = 4, p = 0.2):
     
     return G.adj
 
-def run_sim(G, k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2=1.46e9, node_distance=1, sf=0.994, dist_runs =1):
+def run_sim(G, k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2=1.46e9, node_distance=1, sf=0.994, dist_runs =1, l=0.5):
     ns.sim_reset()
     generate_users(G)
 
@@ -1761,12 +1767,15 @@ def run_sim(G, k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2=1.46e9,
         for row in G[col]:
             total_sum += (G[col][row]["w"])
     max_links = total_sum*num_channels
-
     dataframes, dist_examples, blocking = [],[],[]
-
-    while((np.sum(channels)/max_links)< 0.7):
-        create_random_connections(G, network, channels, total_cons, total_links, dist_examples, dataframes, max_links, k, num_runs, q_mem_size, num_channels, node_distance, blocking)
-
+    blocked_count = 0
+   
+    while (np.sum(channels)/max_links< 0.7) and (sum(total_cons)<0.7*q_mem_size*6) and (blocked_count<4):
+        blocked = create_random_connections(G, network, channels, total_cons, total_links, dist_examples, dataframes, max_links, k, num_runs, q_mem_size, num_channels, node_distance, blocking, l)
+        if(blocked == True):
+            blocked_count +=1  #if no pairs could connect last round, system is getting pretty blocked
+        else:                   #if 4 times in a row no mems or wavelengths available, we're done
+            blocked_count = 0
     ns.sim_run()
     
     results = pandas.DataFrame()
@@ -1774,11 +1783,7 @@ def run_sim(G, k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2=1.46e9,
         results = pandas.concat([results,dataframes[i].dataframe], ignore_index=True, axis = 0)
     for i in range(len(blocking)):
         results = pandas.concat([results,blocking[i]], ignore_index=True, axis = 0)
-
     del dataframes
-
-    usage = np.sum(channels, axis=2)
-    usage = np.sum(usage, axis =1)
 
     return results
 
@@ -1923,5 +1928,3 @@ if __name__ == "__main__":
 
 
 
-
- 
