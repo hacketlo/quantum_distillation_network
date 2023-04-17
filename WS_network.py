@@ -1,4 +1,4 @@
-`import numpy as np
+import numpy as np
 import netsquid as ns
 import pydynaa as pd
 import warnings
@@ -478,7 +478,7 @@ def example_network_setup(source_delay=5.5*10e3, source_fidelity_sq=0.994,
     _INSTR_Rx = IGate("Rx_gate", ops.create_rotation_op(np.pi / 2, (1, 0, 0)))
     _INSTR_RxC = IGate("RxC_gate", ops.create_rotation_op(np.pi / 2, (1, 0, 0), conjugate=True))
 
-    for node in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'):
+    for node in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', "M", "N", "O", "P", "Q", "R", "S", "T", "U","V"):
         n = network.add_node(f"node_{node}")
     
         if (physical == True):
@@ -1263,14 +1263,14 @@ def add_connection(network, nodea, nodeb, src_conns, dest_conns, con_num,
     
     qchannel = QuantumChannel(f"QuantumChannel_{nodeAltr}->{nodeBltr}_{con_num*2}", length=node_distance)
     qchannel.models['quantum_loss_model'] = CustomLossModel( p_loss_node, p_loss_fibre)
-    qchannel.models['quantum_noise_model'] = CustomDecoherenceModel()
+    # qchannel.models['quantum_noise_model'] = CustomDecoherenceModel()
     qchannel.models["delay_model"] = FibreDelayModel(c=200e3)
     port_name_a, port_name_b = network.add_connection(
         nodea, nodeb, channel_to=qchannel, label=f"{alwr}{blwr}{con_num*2}")
     
     qchannel1 = QuantumChannel(f"QuantumChannel_{nodeAltr}->{nodeBltr}_{con_num*2+1}", length=node_distance)
     qchannel1.models['quantum_loss_model'] = CustomLossModel( p_loss_node, p_loss_fibre)
-    qchannel1.models['quantum_noise_model'] = CustomDecoherenceModel()
+    # qchannel1.models['quantum_noise_model'] = CustomDecoherenceModel()
     qchannel1.models["delay_model"] = FibreDelayModel(c=200e3)
     port_name_a1, port_name_b1 = network.add_connection(
         nodea, nodeb, channel_to=qchannel1, label=f"{alwr}{blwr}{con_num*2+1}")
@@ -1361,9 +1361,9 @@ def generate_users(G, lam=0.5):
         source = np.random.poisson(lam)
         for j in range(source):
             sourcelist.append(i)
-            destlist.append(random.choice([k for k in range(0,len(G)) if k not in  [i]]))
+            destlist.append(random.choice([k for k in range(0,len(G)) if k not in [i]]))
 
-    print(sourcelist, destlist)
+    # print(sourcelist, destlist)
     
     return sourcelist, destlist
 
@@ -1394,7 +1394,7 @@ def create_random_connections(G, network, channels, total_cons, total_links, dis
             mem_blocked+=1
             continue
 
-        shortest_paths = k_shortest_paths(G, str(sources[i]), str(dests[i]), K)
+        shortest_paths = k_shortest_paths(G, int(sources[i]), int(dests[i]), K)
         wavelength, path = find_channel(shortest_paths, channels, len(shortest_paths), num_channels)
         if (wavelength!=-1):
             src, dest, num_nodes_traversed = get_name_and_dist(path)
@@ -1460,6 +1460,7 @@ def k_shortest_paths(graph, source, target, k):
     paths = []
     # distances = dijkstra_shortest_paths(graph, source)
     heap = [(0, [source])]
+    l = graph._atlas.keys()
     while heap and len(paths) < k:
         (distance, path) = heapq.heappop(heap)
         node = path[-1]
@@ -1587,27 +1588,28 @@ def runandsave():
     df3 = pandas.DataFrame()
     df2 = pandas.DataFrame()
           
-    k = 1
+    k = 5
 
-    for p in [1.0]:
+    for p in [0.5]:
         df1 = pandas.DataFrame() 
-        for i in range(20):
+        for i in range(10):
             np.random.seed(i)
-            G = create_WS_graph(10, 4, p)
-            res = run_sim(G, 6, 3, 100, 5, node_distance=0.5)
+            G = create_WS_graph(20, 4, p)
+            res = run_sim(G, k, 1, 100, 5, t1 = 1e12, t2= 1e6,  node_distance=10)
             df1 = pandas.concat([df1,res], ignore_index=True)
             
         print(f"done {p}")
-        df1.to_csv(f"~/qproject/WS/BigT/{p}/k{k}.csv", index=False )
+        df1.to_csv(f"~/qproject/z/mediumT/{p}/bawk{k}.csv", index=False )
 
-    # for i in range(20):
-    #     np.random.seed(i)
-    #     G = create_WS_graph(10, 4, p)
-    #     res = run_sim(G, 6, 3, 100, 5,node_distance=0.5)
-    #     df2 = pandas.concat([df2,res], ignore_index=True)
+    k = 1
+    for i in range(20):
+        np.random.seed(i)
+        G = create_WS_graph(10, 4, p)
+        res = run_sim(G, 5, 3, 100, 5, t1 = 1e12, t2= 1e6,  node_distance=10)
+        df2 = pandas.concat([df2,res], ignore_index=True)
         
     
-    # df2.to_csv(f"~/qproject/WS/BigT/{p}/k2.csv", index=False )
+    df2.to_csv(f"~/qproject/z/mediumT/{p}/k{k}.csv", index=False )
 
 
     grouped1 = df1.groupby('network_load')['F2'].mean()
@@ -1741,11 +1743,10 @@ def Read_and_plot_multiple():
 
 def create_WS_graph(num_nodes = 20, k = 4, p = 0.2):
     """
-     num nodes: The number of nodes in the graph
-     k: The number of nearest neighbors to connect to
-     p: The probability of rewiring an edge
-    :param source: The source node from which to compute the shortest paths.
-    :return: Adjacency list
+     num nodes: The number of nodes in the graph  
+     k: The number of nearest neighbors to create links with
+     p: The probability of rewiring an edge 
+    return: Adjacency list
     """
     G = nx.watts_strogatz_graph(num_nodes, k, p)
     for u, v in G.edges:
@@ -1809,51 +1810,68 @@ def plot_ws_csvs():
 
 def blocking_histograms(k=2):
 
-    fig, ax = plt.subplots(ncols=2, nrows=3)
+    fig, ax = plt.subplots(ncols=3, nrows=2)
 
-    df = pandas.read_csv(f"~/qproject/WS/BigT/0/k2.csv")
+    df = pandas.read_csv(f"~/qproject/z/mediumT/0.2/k1.csv")
     df = df[df['blocked'].notna()]
     df = df[["network_load"]]   
     counts = df.value_counts()
     total_counts = sum(counts.values)
     df.hist(ax=ax[0][0])
-    ax[0][0].set_title(f"p=0, Blocks={total_counts}")
-    df = pandas.read_csv(f"~/qproject/WS/BigT/0/k2.csv") 
+    ax[0][0].set_ylabel("Number of blocks")
+    ax[0][0].set_xlabel("Network load")
+    ax[0][0].set_title(f"p=0.2, k = 1, Blocks={total_counts}")
+
+    df = pandas.read_csv(f"~/qproject/z/mediumT/0.5/k1.csv") 
     df = df[df['blocked'].notna()]
     df = df[["network_load"]]
     counts = df.value_counts()
     total_counts = sum(counts.values)    
     df.hist(ax=ax[0][1])
-    ax[0][1].set_title(f"p=0.2, Blocks={total_counts}")
-    df = pandas.read_csv(f"~/qproject/WS/BigT/0.4/k2.csv")
+    ax[0][1].set_ylabel("Number of blocks")
+    ax[0][1].set_xlabel("Network load")
+    ax[0][1].set_title(f"p=0.5, k = 1, Blocks={total_counts}")
+
+    df = pandas.read_csv(f"~/qproject/z/mediumT/0.8/k1.csv")
+    df = df[df['blocked'].notna()]
+    df = df[["network_load"]]
+    counts = df.value_counts()
+    total_counts = sum(counts.values)    
+    df.hist(ax=ax[0][2])
+    ax[0][2].set_ylabel("Number of blocks")
+    ax[0][2].set_xlabel("Network load")
+    ax[0][2].set_title(f"p=0.8, k = 1, Blocks={total_counts}")
+
+    df = pandas.read_csv(f"~/qproject/z/mediumT/0.2/k5.csv")
     df = df[df['blocked'].notna()]
     df = df[["network_load"]]
     counts = df.value_counts()
     total_counts = sum(counts.values)    
     df.hist(ax=ax[1][0])
-    ax[1][0].set_title(f"p=0.4, Blocks={total_counts}")
-    df = pandas.read_csv(f"~/qproject/WS/BigT/0.6/k2.csv")
+    ax[1][0].set_ylabel("Number of blocks")
+    ax[1][0].set_xlabel("Network load")
+    ax[1][0].set_title(f"p=0.2, k = 5, Blocks={total_counts}")
+
+    df = pandas.read_csv(f"~/qproject/z/mediumT/0.5/k5.csv")
     df = df[df['blocked'].notna()]
     df = df[["network_load"]]
     counts = df.value_counts()
     total_counts = sum(counts.values)    
     df.hist(ax=ax[1][1])
-    ax[1][1].set_title(f"p=0.6, Blocks={total_counts}")
-    df = pandas.read_csv(f"~/qproject/WS/BigT/0.8/k2.csv")
+    ax[1][1].set_ylabel("Number of blocks")
+    ax[1][1].set_xlabel("Network load")
+    ax[1][1].set_title(f"p=0.5, k = 5, Blocks={total_counts}")
+
+    df = pandas.read_csv(f"~/qproject/z/mediumT/0.8/k5.csv")
     df = df[df['blocked'].notna()]
     df = df[["network_load"]]
     counts = df.value_counts()
     total_counts = sum(counts.values)    
-    df.hist(ax=ax[2][0])
-    ax[2][0].set_title(f"p=0.8, Blocks={total_counts}")
-    df = pandas.read_csv(f"~/qproject/WS/BigT/1.0/k2.csv")
-    df = df[df['blocked'].notna()]
-    df = df[["network_load"]]
-    counts = df.value_counts()
-    total_counts = sum(counts.values)    
-    df.hist(ax=ax[2][1])
-    ax[2][1].set_title(f"p=1, Blocks={total_counts}")
-    plt.suptitle("Blocking for K=6")
+    df.hist(ax=ax[1][2])
+    ax[1][2].set_ylabel("Number of blocks")
+    ax[1][2].set_xlabel("Network load")
+    ax[1][2].set_title(f"p=0.8, k = 5 Blocks={total_counts}")
+    plt.suptitle("WS - M = 10, N = 4, Wavelength blocking ")
     
     plt.show()
     
@@ -1864,47 +1882,24 @@ def blocking_histograms(k=2):
 if __name__ == "__main__":
     
     # plot_ws_csvs()
-    blocking_histograms()
+    # blocking_histograms()
     # runandsave()
 
-    # plt.figure(figsize=[10,8])
-    # df = pandas.read_csv(f"~/qproject/WS/BigT/0.2/k6.csv")
-    # df = df[["network_load", "blocked"]]
-    # df = df[df['blocked'].notna()]
-    # hist,bin_edges = np.histogram(df["network_load"])
+    fig, ax = plt.subplots()
 
-    # bin_edges = np.round(bin_edges,0)
-
-    # plt.bar(bin_edges[:-1], hist, width = 0.5, color='#0504aa',alpha=0.7)
-    # plt.xlim(min(bin_edges), max(bin_edges))
-    # plt.grid(axis='y', alpha=0.75)
-    # plt.xlabel('Value',fontsize=15)
-    # plt.ylabel('Frequency',fontsize=15)
-    # plt.xticks(fontsize=15)
-    # plt.yticks(fontsize=15)
-    # plt.ylabel('Frequency',fontsize=15)
-    # plt.title('Normal Distribution Histogram',fontsize=15)
-    # plt.show()
-
-
-    # fig, ax = plt.subplots()
-
-    # rates = pandas.DataFrame()
-    # for p in  [0, 0.6, 1.0]:
-    #     df = pandas.read_csv(f"~/qproject/WS/BigT/{p}/k6.csv")
-    #     df["time"]=pow(df['time'], -1)*1e9
-    #     grouped1 = df.groupby('network_load')['F2'].mean()
-    #     a, b = np.polyfit(grouped1.index, grouped1.values, 1)
-    #     plt.plot(grouped1.index,a*grouped1.index+b, label =f"p={p}")
-    #     plt.legend()
-    #     plt.scatter(grouped1.index, grouped1.values)
+    rates = pandas.DataFrame()
+    for p in  [0.2, 0.5, 0.8]:
+        G = create_WS_graph(20, 4, 0.5)
+        df = run_sim(G, 3, 1, 100, 5, t1 = 1e12, t2= 1e6,  node_distance=10)
+        df["time"]= pow(df['time'], -1)*1e9
+        grouped1 = df.groupby('network_load')['F2'].mean()
+        a, b = np.polyfit(grouped1.index, grouped1.values, 1)
+        plt.plot(grouped1.index,a*grouped1.index+b, label =f"p={p}")
+        plt.legend()
+        plt.scatter(grouped1.index, grouped1.values)
         
 
-    # plt.title("Watts-Strogatz network - N=10, K_ws = 4, k = 6, 5 Channels")
-    # plt.xlabel('Network load')
-    # plt.ylabel('Ebit rate')
-    # # plt.ylabel('Average Fidelity')
-    # plt.show()
+
 
     
 
@@ -1928,3 +1923,5 @@ if __name__ == "__main__":
 
 
 
+
+ 

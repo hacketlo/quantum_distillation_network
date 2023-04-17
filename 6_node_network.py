@@ -652,23 +652,25 @@ class DistilFurther(NodeProtocol):
 
 class Distil(NodeProtocol):
 
-    # set basis change operators for local DEJMPS step
+    # setup instructions for DEJMPS step
     _INSTR_Rx = IGate("Rx_gate", ops.create_rotation_op(np.pi / 2, (1, 0, 0)))
     _INSTR_RxC = IGate("RxC_gate", ops.create_rotation_op(np.pi / 2, (1, 0, 0), conjugate=True))
-    # _INSTR_Rx_P = PhysicalInstruction(_INSTR_Rx, duration=1)
-    # _INSTR_RxC_P = PhysicalInstruction(_INSTR_RxC, duration=1)
-    # INSTR_CNOT_P = PhysicalInstruction(INSTR_CNOT, duration=1)
-    # INSTR_MEASURE_P = PhysicalInstruction(INSTR_MEASURE, duration=1)
+    _INSTR_Rx_P = PhysicalInstruction(_INSTR_Rx, duration=1)
+    _INSTR_RxC_P = PhysicalInstruction(_INSTR_RxC, duration=1)  #define physical instructions
+    INSTR_CNOT_P = PhysicalInstruction(INSTR_CNOT, duration=1)
+    INSTR_MEASURE_P = PhysicalInstruction(INSTR_MEASURE, duration=1)
 
-    def __init__(self, node, port, role, start_expression=None, start_expression_qb2=None, msg_header="distil", name=None, con_num = 0, imp = 0):
+    def __init__(self, node, port, role, start_expression=None, start_expression_qb2=None, msg_header="distil",
+                  name=None, con_num = 0, imp = 0, physical = False):
         if role.upper() not in ["A", "B"]:
             raise ValueError
-        conj_rotation = role.upper() == "B"
+        conj_rotation = role.upper() == "B"             #If Bob, Conjugate rotation
         if not isinstance(port, Port):
             raise ValueError("{} is not a Port".format(port))
         name = name if name else "DistilNode({}, {}, {})".format(node.name, port.name, con_num)
         super().__init__(node, name=name)
         self.port = port
+        self.physical = physical
         self.instance_id = con_num
         self.start_expression = start_expression
         self.start_expression_qb2 = start_expression_qb2
@@ -679,6 +681,8 @@ class Distil(NodeProtocol):
         self.failed = False
         self. input_mem_pos = imp
         self.remote_meas_result = None
+
+
         self.header = f"distil_{con_num}"
         self._qmem_positions = [None, None]
         self._waiting_on_second_qubit = False
@@ -687,19 +691,18 @@ class Distil(NodeProtocol):
 
     def _setup_dejmp_program(self, conj_rotation):
         INSTR_ROT = self._INSTR_Rx if not conj_rotation else self._INSTR_RxC
- 
         prog = QuantumProgram(num_qubits=2)
         q1, q2 = prog.get_qubit_indices(2)
-        prog.apply(INSTR_ROT, [q1], physical = True)
-        prog.apply(INSTR_ROT, [q2], physical=True)
-        prog.apply(INSTR_CNOT, [q1, q2], physical=True)
-        prog.apply(INSTR_MEASURE, q2, output_key="m", inplace=False, physical=True)
+        prog.apply(INSTR_ROT, [q1], physical=self.physical)     #Deutch's distillation protocol
+        prog.apply(INSTR_ROT, [q2], physical=self.physical)
+        prog.apply(INSTR_CNOT, [q1, q2], physical=self.physical)
+        prog.apply(INSTR_MEASURE, q2, output_key="m", inplace=False, physical=self.physical)
         return prog
 
     def run(self):
-        cchannel_ready = self.await_port_input(self.port)
-        qmemory_ready = self.start_expression
-        qmemory2_ready = self.start_expression_qb2
+        cchannel_ready = self.await_port_input(self.port)   #classical channel input
+        qmemory_ready = self.start_expression               #qchannel 1 success signal
+        qmemory2_ready = self.start_expression_qb2          #qchannel 2 success signal
 
         while True:
             # self.send_signal(Signals.WAITING)
@@ -707,10 +710,9 @@ class Distil(NodeProtocol):
 
             if expr.first_term.value:
                 classical_message = self.port.rx_input()
-                if classical_message.meta["header"]==self.header:
+                if classical_message.meta["header"]==self.header:   #Other node success, get results
                     self.remote_qcount, self.remote_meas_result = classical_message.items
-                if classical_message.meta["header"]=="FAIL":
-                    # self._qmem_positions = [self.input_mem_pos, self.input_mem_pos+1]
+                if classical_message.meta["header"]=="FAIL":       #Other node failed, restart
                     self._clear_qmem_positions()
                     self.send_signal(Signals.FAIL, self.local_qcount)
                     self.local_meas_result = None
@@ -723,29 +725,30 @@ class Distil(NodeProtocol):
                 ready_signal = source_protocol.get_signal_by_event(
                     event=expr.second_term.triggered_events[0], receiver=self)
                 if (self.node.qmemory.mem_positions[ready_signal.result]._qubit.qstate==None): #heralding
-                    self._qmem_positions[0] = self.input_mem_pos
-                    if self.local_qcount==0:
-                        yield qmemory2_ready
+                    self._qmem_positions[0] = self.input_mem_pos     # if qubit state is none, we did not recieve a qubit                   
+                    if self.local_qcount==0:                       # if only first qubit did not arrive, we wait until we 
+                        yield qmemory2_ready                     # recieve the second photon in transit, before restarting
                         self._qmem_positions[1] = self.input_mem_pos+1
                     self._clear_qmem_positions()
                     self.send_signal(Signals.FAIL, self.local_qcount)
                     self.failed = True
                     self.port.tx_output(Message([self.local_qcount, self.local_meas_result],
-                                    header="FAIL"))
+                                    header="FAIL"))                #send fail signal to other node
                     self._waiting_on_second_qubit = False
                     self.local_meas_result = None
                     self.local_qcount=0
                     self.remote_qcount = 0
                     self.remote_meas_result = None
                 else:
-                    yield from self._handle_new_qubit(ready_signal.result)
+                    yield from self._handle_new_qubit(ready_signal.result)      #we got a qubit, handle it
                 
             elif expr.second_term.second_term.value:
                 source_protocol = expr.second_term.second_term.atomic_source
                 ready_signal = source_protocol.get_signal_by_event(
+
                     event=expr.second_term.triggered_events[0], receiver=self)
                 if (self.node.qmemory.mem_positions[ready_signal.result]._qubit.qstate==None): #heralding
-                    self._qmem_positions[1] = self.input_mem_pos+1
+                    self._qmem_positions[1] = self.input_mem_pos+1        #If we did not recieve a qubit, FAIL
                     self._clear_qmem_positions()
                     self.send_signal(Signals.FAIL, self.local_qcount)
                     self.failed = True
@@ -757,7 +760,7 @@ class Distil(NodeProtocol):
                     self.remote_qcount = 0
                     self.remote_meas_result = None
                 else:
-                    yield from self._handle_new_qubit(ready_signal.result)
+                    yield from self._handle_new_qubit(ready_signal.result) #we got a qubit, handle it
      
             self._check_success()
 
@@ -788,26 +791,21 @@ class Distil(NodeProtocol):
             self._waiting_on_second_qubit = False
             yield from self._node_do_DEJMPS()
         else:
-           
             pop_positions = [p for p in self._qmem_positions if p is not None and p != memory_position]
             if len(pop_positions) > 0:
-                self.node.qmemory.pop(positions=pop_positions)
+                self.node.qmemory.pop(positions=pop_positions)            #this is first qubit pop any present qubits
             # Set new position:
             self._qmem_positions[0] = memory_position
             self._qmem_positions[1] = None
             self.local_qcount += 1
             self.local_meas_result = None
-            self._waiting_on_second_qubit = True
+            self._waiting_on_second_qubit = True                        # we are now waiting on second qubit
 
     def _node_do_DEJMPS(self):
-        # Perform DEJMPS distillation protocol locally on one node
+        # Perform DEJMPS distillation protocol locally on a node
         pos1, pos2 = self._qmem_positions
-    
-        #pos1, pos2 = self.node.qmemory.used_positions[0], self.node.qmemory.used_positions[1]
-        if self.node.qmemory.busy:
-            #yield self.await_program(self.node.qmemory)
-            yield self.await_timer(np.random.randint(100,500))
-        
+        if self.node.qmemory.busy:                                  # if qmemory is busy we wait a random time
+            yield self.await_timer(np.random.randint(100,500))    # was getting perpetual waitng using await events here                                                     
         yield self.node.qmemory.execute_program(self._program, [pos2, pos1])  
         self.failed=False
         self.local_meas_result = self._program.output["m"][0]
@@ -817,27 +815,25 @@ class Distil(NodeProtocol):
                                     header=self.header))
 
     def _check_success(self):
-        # Check if distillation succeeded by comparing local and remote results
+        # Check if distillation was successful by comparingg results
         if (self.local_qcount == self.remote_qcount and
                 self.local_meas_result is not None and
                 self.remote_meas_result is not None):
             if self.local_meas_result == self.remote_meas_result:
-                # SUCCESS
                 self.send_signal(Signals.SUCCESS, self._qmem_positions[1])
             else:
-                # FAILURE
                 self._clear_qmem_positions()
                 self.send_signal(Signals.FAIL, self.local_qcount)
               
             self.local_meas_result = None
-            self.remote_meas_result = None
+            self.remote_meas_result = None              #rest
             self.local_qcount=0
             self.remote_qcount = 0
             self._qmem_positions = [None, None]
 
     @property
     def is_connected(self):
-        if self.start_expression is None:
+        if self.start_expression is None:               #ensure protocol is fully connected
             return False
         if not self.check_assigned(self.port, Port):
             return False
@@ -1411,6 +1407,10 @@ def create_random_connections(G, network, channels, total_cons, total_links, dis
             blocking.append(dc)
             ns.sim_run(duration=31)
 
+    if (len(sources)==0):
+        dc = pandas.DataFrame({"time waited":10029}, index =[0])
+        blocking.append(dc)
+
     ns.sim_run(duration=10029)
     
     if (mem_blocked >= len(sources)):   #if for all pairs generated this round, no mems found return 
@@ -1501,6 +1501,60 @@ def t1t2_plot(num_iters=50):
 
     plt.show()
 
+def traffic_plot(num_iters=1):
+    import matplotlib
+    matplotlib.use('TkAgg')
+    from matplotlib import pyplot as plt
+    fig, ax = plt.subplots()
+    #(3600*1e9,1.46e9, 1), (3600*1e9,1.46e9, 2), (3600*1e9,1.46e9, 3)
+    
+    
+        
+    data = pandas.DataFrame()
+    time_data = pandas.DataFrame()
+    avg_time = pandas.DataFrame()
+    index = [0.5,1,2,4,8,16]
+        # 
+        
+    for l in index:
+        res, avtime = simulate_six_nodes(t1 = 1e12, t2= 1e6, q_mem_size=150, node_distance=1, num_channels = 8, num_runs=num_iters, dist_runs = 1, k =3, l = l)
+            # waited = res[res["time waited"].notna()]
+            # waited = sum(waited["time waited"])
+            # res = res[res['time'].notna()]["time"]
+            # res.values[0] += waited 
+            # data[l]= res
+          # avg_time.append(avtime)
+        print (f"done {l}")  
+            
+            # data = data.agg(['mean', 'sem']).T.rename(columns={'mean': 'time'})
+        time_data[l]=res["time"]
+        # For errorbars we use the standard error of the mean (sem)
+        # data = data.agg(['mean', 'sem']).T.rename(columns={'mean': 'fidelity'})
+
+    time_data = time_data.agg(['mean', 'sem']).T.rename(columns={'mean': 'time'})
+        # time_data = time_data/10
+        # time_data = pow(time_data, -1)*1e9
+        
+        # plt.plot(index, avg_time, label=f"Channels={channels} Mems={mem}")
+    time_data.plot(y='time', label=f"Channels=8 Mems=150", ax=ax)
+        # axes[1].plot(index,avg_time,label=f"Channels={channels} Mems={mem}")
+ 
+
+    plt.title("Comparison of different lamda values")
+
+    # fig.suptitle("Comparison of performance for different lamda values")
+    # plt.xlabel("lambda")
+    # axes[0].set_xscale("log")
+    # plt.ylabel("ebit rate (ebits/s)")
+    plt.title("Comparison of performance for different lamda values")
+    # plt.legend()
+    plt.xlabel("lamda")
+    # axes[1].set_xscale("log")
+    plt.ylabel("time taken (ns)")
+    plt.title("Average time for a connection")
+
+    plt.show()
+
 def runandsave():
     ns.sim_reset()
     df3 = pandas.DataFrame()
@@ -1537,7 +1591,7 @@ def blocking_histograms(k=2):
     fig, ax = plt.subplots(ncols=3, nrows=2)
 
     df = pandas.read_csv("~/qproject/repeatedruns/mem10chan3")
-    df = df[df['blocked'].notna()]
+    df = df[df['Mem full'].notna()]
     df = df[["network_load"]]   
     counts = df.value_counts()
     total_counts = sum(counts.values)
@@ -1546,12 +1600,12 @@ def blocking_histograms(k=2):
     ax[0][0].set_xlabel("Network load")
     ax[0][0].set_title(f"M=10 N=3, Blocks={total_counts}")
 
-    # df = pandas.read_csv("~/qproject/repeatedruns/mem10chan5") 
-    # df = df[df['blocked'].notna()]
-    # df = df[["network_load"]]
-    # counts = df.value_counts()
-    # total_counts = sum(counts.values)    
-    # df.hist(ax=ax[1][0])
+    df = pandas.read_csv("~/qproject/repeatedruns/mem10chan5") 
+    df = df[df['blocked'].notna()]
+    df = df[["network_load"]]
+    counts = df.value_counts()
+    total_counts = sum(counts.values)    
+    df.hist(ax=ax[1][0])
     ax[1][0].set_ylabel("Number of blocks")
     ax[1][0].set_xlabel("Network load")
     ax[1][0].set_title(f"M=10 N=5, Blocks={total_counts}")
@@ -1673,7 +1727,8 @@ def simulate_six_nodes(k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2
     max_links = total_sum*num_channels
     dataframes, dist_examples, blocking = [],[],[]
     blocked_count = 0
-   
+    start_time = sim_time()
+
     while (np.sum(channels)/max_links< 0.7) and (sum(total_cons)/2<0.9*q_mem_size*6) and (blocked_count<4):
         blocked = create_random_connections(G, network, channels, total_cons, total_links, dist_examples, dataframes, max_links, k, num_runs, q_mem_size, num_channels, node_distance, blocking, l)
         if(blocked == True):
@@ -1681,6 +1736,10 @@ def simulate_six_nodes(k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2
         else:                   #if 4 times in a row no mems or wavelengths available, we're done
             blocked_count = 0
     ns.sim_run()
+    time = sim_time() - start_time
+    avg_time = time
+    dc = pandas.DataFrame({"time waited":0}, index =[0]) # added to stop a bug
+    blocking.append(dc)
     #network.nodes._map._data['node_A'].qmemory.unused_positions
     results = pandas.DataFrame()
     for i in range(len(dataframes)):
@@ -1690,7 +1749,7 @@ def simulate_six_nodes(k, num_runs, q_mem_size, num_channels, t1= 3600 * 1e9, t2
 
     del dataframes
 
-    return results
+    return results, avg_time
 
 def node_bars():
     df = pandas.read_csv("~/qproject/k1_d=0.5._10chan_tsmall.csv")
@@ -1739,19 +1798,23 @@ def read_and_plot(path):
   
 if __name__ == "__main__":
     
-    # ns.sim_reset()
-    # runandsave()
-    # df =  simulate_six_nodes(3, 100, 10, 10)
-    # df["time"]=pow(df['time'], -1)*1e9
-    # # grouped1 = df.groupby("network_load")["time"].agg(['mean', 'sem'])
-    # grouped1 = df.groupby("network_load")["dist"].agg(['mean', 'sem'])
-    # grouped1.plot(y='mean', yerr='sem', label=f"K={3}")
-    # plt.title("Average ebit rate 6 node network - Nuclear Spins")
-    # plt.xlabel('Network load')
-    # plt.ylabel('ebit rate')
-    # plt.show()
+    ns.sim_reset()
+    #runandsave()
+    df = simulate_six_nodes(3, 100, 10, 10)
+    df["time"]=pow(df['time'], -1)*1e9
+    # grouped1 = df.groupby("network_load")["time"].agg(['mean', 'sem'])
+    grouped1 = df.groupby("network_load")["dist"].agg(['mean', 'sem'])
+    grouped1.plot(y='mean', yerr='sem', label=f"K={3}")
+    plt.title("Average ebit rate 6 node network - Dynamical decoupling")
+    plt.xlabel('Network load')
+    plt.ylabel('ebit rate')
+    plt.show()
+
+
+
     # mem_blocking()
-    blocking_histograms()
+    # blocking_histograms()
+    # traffic_plot(10)
     
 
 

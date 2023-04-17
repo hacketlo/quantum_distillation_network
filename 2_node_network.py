@@ -1438,19 +1438,19 @@ def timetaken_plot(num_iters=500):
     plt.show()
     
 # t1 = 3600*1e9,t2 = 1.46e9
-def source_fidelity_plot(num_iters=10, t1 = 2.68e6, t2= 3.3e3, node_distance= 1, pln=0):
+def source_fidelity_plot( num_iters=10, t1 = 2.68e6, t2= 3.3e3, node_distance= 0.1, pln=0):
     import matplotlib
     matplotlib.use('TkAgg')
     from matplotlib import pyplot as plt
     fig, ax = plt.subplots()
     for dist_runs in [0,1,2,3]:
         if dist_runs == 0: 
-            num_iters = 300 
+            num_iters = 500 
         else :
-            num_iters = 200
+            num_iters = 400
         data = pandas.DataFrame()
-        for sf in range(8, 20):
-            data[sf*.05] = simulate_two_nodes(p_loss_node=0, t1 = t1, t2 = t2, sf = sf*.05, node_distance=node_distance, num_iters=num_iters, distruns = dist_runs)['F2']
+        for sf in range(8, 20, 2):
+            data[sf*.05] = simulate_two_nodes(p_loss_node=0.01, t1 = t1, t2 = t2, sf = sf*.05, node_distance=node_distance, num_iters=num_iters, distruns = dist_runs)['F2']
         # For errorbars we use the standard error of the mean (sem)
         data = data.agg(['mean', 'sem']).T.rename(columns={'mean': 'fidelity'})
         data.plot(y='fidelity', yerr='sem', label=f"m = {dist_runs+1}:1", ax=ax)
@@ -1467,18 +1467,20 @@ def t1t2_plot(num_iters=100):
     fig, axes = plt.subplots(ncols=2)
     # (2.68e6, 3.3e3, 0), (2.68e6, 3.3e3, 1), (2.68e6, 3.3e3, 2), (2.68e6, 3.3e3, 3), (3600*1e9,1.46e9, 0), (3600*1e9,1.46e9, 1), (3600*1e9,1.46e9, 2), (3600*1e9,1.46e9, 3)
     # (2.68e6, 3.3e3, 0), (2.68e6, 3.3e3, 1), (2.68e6, 3.3e3, 2), (2.68e6, 3.3e3, 3)
-    for t1 in [1e12, 1e11, 1e10, 1e9] :
+    for t1 in [1e12, 1e9, 5e6] :
+        np.random.seed(104058)
         data = pandas.DataFrame()
         time_data = pandas.DataFrame()
-        for t2 in [1e9, 5e8, 1e8, 5e7, 1e7, 5e6, 1e6]:
-            res = simulate_two_nodes(t1 = t1, t2=t2, node_distance=1, num_iters=num_iters, distruns = 2)
+        for t2 in [5e6, 1e6, 5e5, 1e5, 5e4]:
+            res = simulate_two_nodes(p_loss_node = 0, t1 = t1, t2=t2, node_distance=10, num_iters=num_iters, distruns = 2)
             time_data[t2] = pow(res['time'], -1)*1e9
             data[t2] = res['F2']        
+            print(f"done {t2}")
 
         data = data.agg(['mean', 'sem']).T.rename(columns={'mean': 'fidelity'})
         time_data = time_data.agg(['mean', 'sem']).T.rename(columns={'mean': 'time'})
-        data.plot(y='fidelity', yerr='sem', label=f"T1={t1}, T2={t2}", ax=axes[0])
-        time_data.plot(y='time', yerr='sem', label=f"T1={t1}, T2={t2}", ax=axes[1])
+        data.plot(y='fidelity', yerr='sem', label=f"T1= {t1:.0e}", ax=axes[0])
+        time_data.plot(y='time', yerr='sem', label=f"T1= {t1:.0e}", ax=axes[1])
         print(f"done {t1}" )
   
     # plt.xlabel("T2 (ns)")
@@ -1511,12 +1513,13 @@ def physical_plot(num_iters=200):
     times = []
     # for nodes, distruns in (2,0), (2,1), (3,0), (3,1), (4,0), (4,1):
     for phys, distruns in  (True,1), (True,2), (True,3), (False,1), (False,2), (False,3):
+        np.random.seed(104058)
         data = pandas.DataFrame()
         time_data = pandas.DataFrame()
         for d in [0.1, 0.2, 0.3, 0.4, 0.5] :
             
             # t1 = 2.68e6, t2= 3.3e3
-            res = simulate_two_nodes(t1 = 2.68e6, t2= 3.3e3, node_distance=d, num_iters=num_iters, distruns = distruns, physical = phys)
+            res = simulate_two_nodes(node_distance=d, num_iters=num_iters, distruns = distruns, physical = phys)
 
             if not res.empty:
                 if res.shape[0]!=num_iters:     #entanglesetup only returns value on success. 
@@ -1533,7 +1536,7 @@ def physical_plot(num_iters=200):
         data.plot(y='fidelity', yerr='sem', label=f"m = {distruns+1}:1, Phys = {phys}" , ax=axes[0])
         time_data.plot(y='time', yerr='sem', label=f"m = {distruns+1}:1, Phys = {phys}", ax=axes[1])
  
-    fig.suptitle("Physical vs Non-physical Instructions - Electron Spins")
+    fig.suptitle("Physical vs Non-physical Instructions - Dynamic decoupling")
     axes[0].set_xlabel("Total Distance of link (km)")
     axes[0].set_ylabel("Average fidelity on success")
     axes[0].set_title("Avg fidelity")
@@ -1551,12 +1554,12 @@ def nodes_plot(num_iters=1):
  
     times = []
     # for nodes, distruns in (2,0), (2,1), (3,0), (3,1), (4,0), (4,1):
-    for nodes, distruns in  (2,0), (2,1), (2,2), (2,3):
+    for nodes, distruns in  (2,1), (2,2), (2,3), (3,1), (3,2), (3,3) :
         data = pandas.DataFrame()
         time_data = pandas.DataFrame()
-        for d in [0.05, 0.1, 0.15, 0.2, 0.25, 0.3] :
+        for d in [0.2, 0.4, 0.6, 0.8, 1] :
             
-            res = simulate_two_nodes(t1 = 2.68e6, t2= 3.3e3, p_loss_node=(nodes)*2, node_distance=d, num_iters=num_iters, distruns = distruns)
+            res = simulate_two_nodes(t1= 3600 * 1e9, t2=1.46e9, p_loss_node=0.1, node_distance=d, num_iters=num_iters, distruns = distruns)
 
             if not res.empty:
                 if res.shape[0]!=num_iters:     #entanglesetup only returns value on success. 
@@ -1577,7 +1580,7 @@ def nodes_plot(num_iters=1):
         time_data.plot(y='time', yerr='sem', label=f"m = {distruns+1}:1, hops = {nodes-2}", ax=axes[1])
  
     # fig.suptitle("Dynamical Decoupling NV centres")
-    fig.suptitle("Electron spins - NV centres")
+    fig.suptitle("Dynamic Decoupling - NV centres")
     axes[0].set_xlabel("Total Distance of link (km)")
     axes[0].set_ylabel("Average fidelity on success")
     axes[0].set_title("Avg fidelity")
@@ -1588,7 +1591,7 @@ def nodes_plot(num_iters=1):
     plt.show()
 
 
-def simulate_two_nodes(t1= 3600 * 1e9, t2=1.46e9, node_distance=1, num_iters=1, sf=0.8, distruns =1, p_loss_node=2, physical = False):
+def simulate_two_nodes(t1= 3600 * 1e9, t2=1.46e9, node_distance=1, num_iters=1, sf=0.8, distruns =1, p_loss_node=4, physical = False):
     ns.sim_reset()
     if(distruns ==0):
         network = example_network_setup(t1 = t1, t2 =t2,  p_loss_node=p_loss_node, qprocessor_positions=4, node_distance=node_distance, source_fidelity_sq=sf, physical = physical)
@@ -1622,16 +1625,12 @@ def simulate_two_nodes(t1= 3600 * 1e9, t2=1.46e9, node_distance=1, num_iters=1, 
 
 
 if __name__ == "__main__":
-    
-    # ns.sim_reset()
 
-    # network = example_network_setup(qprocessor_positions=4, node_distance=1)
-    # add_connection(network, network.get_node("node_A"), network.get_node("node_B"), src_conns=1, dest_conns=1, con_num=1, node_distance=1)
-    # dist_once = DistilThrice(network.get_node("node_A"), network.get_node("node_B"), inputmempos_a=0, inputmempos_b= 0, num_runs=100, con_name= "AB0", qs_no="0")
-    # dc = setup_data_collector(dist_once, network.get_node("node_A"), network.get_node("node_B"))
-    # dist_once.start()  
-    # ns.sim_run()
-    np.random.seed(104058)
-    # physical_plot()
-    # source_fidelity_plot()
-    t1t2_plot(5000)
+    np.random.seed(10408)
+
+    #these functions all reproduce figures from the thesis
+
+    # physical_plot(100)
+    # nodes_plot(1000)
+    source_fidelity_plot(100)
+    # t1t2_plot(2000)
