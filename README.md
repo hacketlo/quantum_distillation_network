@@ -1,3 +1,7 @@
+# Read my thesis here
+
+https://github.com/hacketlo/quantum_distillation_network/blob/main/LHackettSchEng2023%20(2).pdf
+
 # quantum_distillation_network
 
 Quantum network simulator using netSquid.
